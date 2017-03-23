@@ -1,0 +1,14 @@
+
+[general]
+musicdir = '/home/djazz/Music/'
+uploaddir = 'upload'
+playlistdir = 'playlists'
+extensions = ['mp3', 'flac', 'ogg', 'm4a', 'wav']
+
+[server]
+host = 'localhost'
+port = 6601
+datastore = 'sqlite'
+
+[sqlite]
+filename = './musiclib.db'
