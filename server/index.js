@@ -69,7 +69,7 @@ async function addTrack (fullname, file, basename) {
     albumartist: info.album_performer || null,
     bitrate: info.overallbitrate_string ? parseInt(info.overallbitrate_string.replace(/\s/g, ''), 10) : null,
     duration,
-    position: parseInt(info.track_position, 10) || null,
+    track: parseInt(info.track_position, 10) || null,
     year: parseInt(info.recorded_date, 10) || null,
     genre: info.genre || null,
     comment: info.comment || null,
@@ -180,6 +180,7 @@ router.get('/track/:id', async (ctx, next) => {
 router.get('/track/:id/download', async (ctx, next) => {
   let tracks = await Track.query().select('file').where('rowid', ctx.params.id)
   if (!tracks || !tracks[0]) {
+    ctx.status = 404
     ctx.body = 'not found'
     return
   }
@@ -189,8 +190,8 @@ router.get('/track/:id/download', async (ctx, next) => {
 })
 router.get('/track/:id/stream', async (ctx, next) => {
   let tracks = await Track.query().select('file').where('rowid', ctx.params.id)
-  console.log(ctx.params)
   if (!tracks || !tracks[0]) {
+    ctx.status = 404
     ctx.body = 'not found'
     return
   }
@@ -205,6 +206,7 @@ router.get('/track/:id/stream', async (ctx, next) => {
 router.get('/track/:id/art', async (ctx, next) => {
   let tracks = await Track.query().select('file').where('rowid', ctx.params.id).andWhere('has_artwork', 1)
   if (!tracks || !tracks[0]) {
+    ctx.status = 404
     ctx.body = 'not found'
     return
   }
