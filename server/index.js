@@ -10,7 +10,7 @@ const busboy = require('async-busboy')
 const mv = require('mv')
 const pify = require('pify')
 const checksum = require('checksum')
-const mediainfo = require('mediainfoq')
+const mediainfo = require('./mediainfo')
 const id3genre = require('id3-genre')
 const child_process = require('child_process')
 const writeFile = require('./utils').writeFile
@@ -44,12 +44,13 @@ async function walk (dir, options = {}) {
 }
 
 async function addTrack (fullname, file, basename) {
-  let info = await mediainfo('--Language=raw', '--Full', fullname)
+  let info = await mediainfo(fullname)
   if (!info || !info[0]) {
     return false
   }
   let hash = await pify(checksum.file)(fullname)
   info = info[0]
+  let stat = await pify(fs.stat)(fullname)
 
   genre = info.genre
   if (genre) {
@@ -79,6 +80,7 @@ async function addTrack (fullname, file, basename) {
   await Track.query().insert({
     file,
     checksum: hash,
+    last_modified: Math.floor(stat.mtime.getTime() / 1000),
     title: info.title || info.track || null,
     artist: info.performer || null,
     album: info.album || null,
@@ -118,6 +120,7 @@ class Track extends objection.Model {
   $afterGet () {
     this.time_added = new Date(this.time_added * 1000)
     this.time_updated = this.time_updated ? new Date(this.time_updated * 1000) : null
+    this.last_modified = new Date(this.last_modified * 1000)
   }
 }
 

@@ -5,9 +5,9 @@ const app = require('./app')
 const Layout = {
   view (vnode) {
     return m('#layout', [
-      //m(nav),
+      // m(nav),
       m('#content', vnode.children),
-      m(player)
+      // m(player)
     ])
   }
 }
