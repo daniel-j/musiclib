@@ -63,31 +63,32 @@ const NotFoundPage = {
 
 m.route.prefix('')
 
-const render = (vnode) => m(Layout, vnode)
-
-m.route(document.getElementById('app'), '/404', {
-  '/': {
-    render: () => render(m(IndexPage))
-  },
-  '/track/:id': {
-    onmatch (attrs) {
-      return m.request('/api/track/' + attrs.id).then((track) => {
-        attrs.track = track
-        return TrackPage
-      }).catch(() => NotFoundPage)
-    },
-    render
-  },
-  '/tracks': {
-    onmatch (attrs) {
-      return m.request('/api/tracks').then((tracks) => {
-        attrs.tracks = tracks
-        return TracksPage
-      }).catch(() => NotFoundPage)
-    },
-    render
-  },
-  '/:path...': {
-    render: () => render(m(NotFoundPage))
+function transformRoutes (routes) {
+  for (let key in routes) {
+    let route = routes[key]
+    routes[key] = {
+      onmatch: (attrs) => Promise.resolve(
+        typeof route === 'function' ? route(attrs) : route
+      ).catch(() => m(NotFoundPage)),
+      render: (vnode) => m(Layout, vnode)
+    }
   }
-})
+  return routes
+}
+
+m.route(document.getElementById('app'), '/404', transformRoutes({
+  '/': IndexPage,
+  '/track/:id': (attrs) => {
+    return m.request('/api/track/' + attrs.id).then((track) => {
+      attrs.track = track
+      return TrackPage
+    })
+  },
+  '/tracks': (attrs) => {
+    return m.request('/api/tracks').then((tracks) => {
+      attrs.tracks = tracks
+      return TracksPage
+    })
+  },
+  '/:path...': NotFoundPage
+}))
