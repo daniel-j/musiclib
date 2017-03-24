@@ -4,7 +4,11 @@ const app = require('./app')
 
 const Layout = {
   view (vnode) {
-    return m('.layout', 'Layout!', vnode.children)
+    return m('#layout', [
+      //m(nav),
+      m('#content', vnode.children),
+      m(player)
+    ])
   }
 }
 
@@ -26,10 +30,12 @@ const TrackPage = {
       trackInfo = m('table', {border: 1}, trackInfo)
     }
 
+    let coverPath = '/api/track/' + attrs.id + '/cover'
+
     return [
       m('h2', 'Track'),
-      m('audio', {src: '/api/track/' + attrs.id + '/stream', controls: true, style: {width: '600px'}}),
-      m('img', {src: '/api/track/' + attrs.id + '/art', width: 200, align: 'left'}),
+      m('audio', {src: '/api/track/' + attrs.id + '/download', controls: true, preload: 'none', style: {width: '600px'}}),
+      m('a', {href: coverPath, target: '_blank'}, m('img', {src: coverPath, width: 200, align: 'left'})),
       trackInfo
     ]
   }

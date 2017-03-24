@@ -2,3 +2,5 @@ node_modules
 musiclib.db
 upload
 build
+cache
+

@@ -11,8 +11,9 @@ const mv = require('mv')
 const pify = require('pify')
 const checksum = require('checksum')
 const mediainfo = require('mediainfoq')
+const id3genre = require('id3-genre')
 const child_process = require('child_process')
-const base64 = require('base64-stream')
+const writeFile = require('./utils').writeFile
 
 // recursively list files in a directory
 async function walk (dir, options = {}) {
@@ -43,40 +44,63 @@ async function walk (dir, options = {}) {
 }
 
 async function addTrack (fullname, file, basename) {
-  let info = await mediainfo('--Language=raw', fullname)
+  let info = await mediainfo('--Language=raw', '--Full', fullname)
   if (!info || !info[0]) {
     return false
   }
   let hash = await pify(checksum.file)(fullname)
   info = info[0]
-  let duration = null
-  if (info.duration_string) {
-    let d = info.duration_string.match(/^(?:(\d*) ?h)?\s?(?:(\d*) ?mi?n)?\s?(?:(\d*) ?s)?\s?(?:(\d*) ?ms)?$/)
-    if (d) {
-      let dur = Math.round((d[1] || 0) * 60 * 60 + (d[2] || 0) * 60 + (d[3] || 0) * 1 + (d[4] || 0) * 0.001)
-      if (dur > 0) {
-        duration = dur
-      }
+
+  genre = info.genre
+  if (genre) {
+    let m = genre.match(/^Genre_(\d*)$/)
+    if (m) {
+      genre = id3genre(parseInt(m[1], 10))
+    }
+  }
+
+  let coverName = null
+  if (info.cover_data) {
+    let coverData = Buffer.from(info.cover_data, 'base64')
+    let coverHash = checksum(coverData)
+    coverName = 'cover_' + coverHash
+    let coverPath = path.join(config.general.cachedir, coverName)
+    let exists = false
+    try {
+      await pify(fs.access)(coverPath)
+      exists = true
+    } catch (err) {}
+    if (!exists) {
+      console.log('Saving cover', coverPath)
+      await writeFile(coverPath, coverData)
     }
   }
 
   await Track.query().insert({
     file,
     checksum: hash,
-    title: info.track || null,
+    title: info.title || info.track || null,
     artist: info.performer || null,
     album: info.album || null,
     albumartist: info.album_performer || null,
-    bitrate: info.overallbitrate_string ? parseInt(info.overallbitrate_string.replace(/\s/g, ''), 10) : null,
-    duration,
-    track: parseInt(info.track_position, 10) || null,
+    composer: info.composer || null,
+    original_artist: info.original_performer || null,
+    duration: Math.ceil(info.duration / 1000) || null,
     year: parseInt(info.recorded_date, 10) || null,
-    genre: info.genre || null,
+    url: info.url || null,
     comment: info.comment || null,
-    has_artwork: info.cover === 'Yes',
+    copyright: info.copyright || null,
+    track: parseInt(info.track_position, 10) || null,
+    track_total: parseInt(info.track_position_total, 10) || null,
+    disc: parseInt(info.part_position, 10) || null,
+    genre: genre || null,
+    bpm: parseInt(info.bpm, 10) || null,
+    bitrate: Math.round(info.overallbitrate / 1000) || null,
     format: info.format,
-    bpm: info.bpm || null
+    cover_mime: info.cover_mime || null,
+    cover_name: coverName
   })
+
   return true
 }
 
@@ -87,9 +111,9 @@ class Track extends objection.Model {
   $beforeInsert () {
     this.time_added = Math.floor(Date.now() / 1000)
   }
-
   $beforeUpdate () {
     this.time_updated = Math.floor(Date.now() / 1000)
+    delete this.time_added
   }
   $afterGet () {
     this.time_added = new Date(this.time_added * 1000)
@@ -110,8 +134,10 @@ walk(config.general.musicdir, {
     let [track] = await Track.query().where('file', file)
     if (!track) {
       await addTrack(fullname, file, basename)
-    } else if (track.deleted) {
+    } else if (track.deleted) { // track was deleted but is now back
       await Track.query().patch({deleted: 0}).where('file', file)
+    } else {
+
     }
     return file
   }
@@ -188,39 +214,26 @@ router.get('/track/:id/download', async (ctx, next) => {
   ctx.attachment(path.basename(file))
   await send(ctx, file, {root: path.resolve(config.general.musicdir)})
 })
-router.get('/track/:id/stream', async (ctx, next) => {
-  let tracks = await Track.query().select('file').where('rowid', ctx.params.id)
+router.get('/track/:id/cover', async (ctx, next) => {
+  let tracks = await Track.query().select('cover_mime', 'cover_name').where('rowid', ctx.params.id).whereNotNull('cover_name')
   if (!tracks || !tracks[0]) {
     ctx.status = 404
     ctx.body = 'not found'
     return
   }
-  let file = tracks[0].file
-  let fullname = path.resolve(config.general.musicdir, file)
-  let stat = await pify(fs.stat)(fullname)
-  ctx.attachment(path.basename(file))
+  let track = tracks[0]
+  let coverPath = path.resolve(config.general.cachedir, track.cover_name)
+  let stat = await pify(fs.stat)(coverPath)
   ctx.length = stat.size
   ctx.lastModified = stat.mtime
-  ctx.body = fs.createReadStream(fullname)
-})
-router.get('/track/:id/art', async (ctx, next) => {
-  let tracks = await Track.query().select('file').where('rowid', ctx.params.id).andWhere('has_artwork', 1)
-  if (!tracks || !tracks[0]) {
-    ctx.status = 404
-    ctx.body = 'not found'
-    return
-  }
-  let file = tracks[0].file
-  let fullname = path.resolve(config.general.musicdir, file)
-  let mime = await pify(child_process.execFile)('mediainfo', ['--Output=General;%Cover_Mime%', fullname])
-  let mi = child_process.spawn('mediainfo', ['--Output=General;%Cover_Data%', fullname])
-  ctx.type = mime.trim()
-  ctx.body = mi.stdout.pipe(base64.decode())
+  ctx.body = fs.createReadStream(coverPath)
+  ctx.type = track.cover_mime
 })
 
 app.use(router.routes())
 
 app.use(async (ctx) => {
+  if (!ctx.accepts('text/html')) return
   await send(ctx, 'index.html', {root: path.join(__dirname, '../static')})
 })
 

@@ -3,6 +3,7 @@
 musicdir = '/home/djazz/Music/'
 uploaddir = 'upload'
 playlistdir = 'playlists'
+cachedir = 'cache'
 extensions = ['mp3', 'flac', 'ogg', 'm4a', 'wav']
 
 [server]
